@@ -1,0 +1,11 @@
+geoip.dat
+geosite.dat
+geosite(1).dat
+xconnect-geoip.dat
+xconnect-geosite.dat
+sha256sums.txt
+build_report.txt
+__pycache__/
+*.pyc
+.venv/
+src/

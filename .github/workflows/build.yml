@@ -1,0 +1,70 @@
+name: Build slim geo rules
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+  push:
+    paths:
+      - 'build_slim.py'
+      - '.github/workflows/build.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download source dat files from runetfreedom
+        run: |
+          mkdir -p src
+          curl -sL -o src/geoip.dat   https://github.com/runetfreedom/russia-blocked-geoip/releases/latest/download/geoip.dat
+          curl -sL -o src/geosite.dat https://github.com/runetfreedom/russia-blocked-geosite/releases/latest/download/geosite.dat
+          ls -la src/
+
+      - name: Build slim dat files
+        run: |
+          cd src
+          mv geosite.dat 'geosite(1).dat'
+          cp ../build_slim.py .
+          python3 build_slim.py | tee ../build_report.txt
+
+      - name: Compute version tag (UTC)
+        id: tag
+        run: echo "tag=$(date -u +%Y%m%d-%H%M)" >> "$GITHUB_OUTPUT"
+
+      - name: Compute sha256 sums
+        run: |
+          cd src
+          sha256sum xconnect-geoip.dat xconnect-geosite.dat > sha256sums.txt
+          cat sha256sums.txt
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.tag.outputs.tag }}" \
+            src/xconnect-geoip.dat \
+            src/xconnect-geosite.dat \
+            src/sha256sums.txt \
+            --title "${{ steps.tag.outputs.tag }}" \
+            --notes-file build_report.txt
+
+      - name: Mark as latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${{ steps.tag.outputs.tag }}" --latest
+
+      - name: Prune old releases (keep last 14)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release list --limit 100 --json tagName --jq '.[].tagName' \
+            | tail -n +15 \
+            | while read -r tag; do
+                echo "Deleting old release: $tag"
+                gh release delete "$tag" -y --cleanup-tag || true
+              done
